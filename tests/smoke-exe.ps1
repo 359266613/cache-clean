@@ -70,6 +70,55 @@ try {
         }
         Write-Host "PASS visible $($expected.Id): $($expected.Text)"
     }
+    $missingCondition = [Windows.Automation.PropertyCondition]::new(
+        [Windows.Automation.AutomationElement]::AutomationIdProperty, 'ShowMissing')
+    $missingControl = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $missingCondition)
+    if (-not $missingControl) { throw 'Missing-category checkbox not found' }
+    $toggle = $missingControl.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern)
+    if ($toggle.Current.ToggleState -ne [Windows.Automation.ToggleState]::Off) {
+        throw 'Missing categories must be hidden by default'
+    }
+    $footerCondition = [Windows.Automation.PropertyCondition]::new(
+        [Windows.Automation.AutomationElement]::AutomationIdProperty, 'SelectedText')
+    $footer = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $footerCondition)
+    $defaultFooter = $footer.Current.Name
+    if ($defaultFooter -notmatch '(\d+)/(\d+)') { throw 'Visible/total category counts not shown' }
+    $totalCount = [int]$Matches[2]
+    $toggle.Toggle()
+    Start-Sleep -Milliseconds 250
+    if ($footer.Current.Name -notmatch '(\d+)/(\d+)' -or [int]$Matches[1] -ne $totalCount -or [int]$Matches[2] -ne $totalCount) {
+        throw 'Showing missing categories did not reveal all scanned categories'
+    }
+    $toggle.Toggle()
+    Start-Sleep -Milliseconds 250
+    if ($footer.Current.Name -ne $defaultFooter) { throw 'Hiding missing categories did not preserve totals and selections' }
+    Write-Host 'PASS missing-category toggle reveals all results and preserves selection totals'
+    $allCondition = [Windows.Automation.PropertyCondition]::new(
+        [Windows.Automation.AutomationElement]::AutomationIdProperty, 'BtnSelectAll')
+    $allButton = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $allCondition)
+    $allInvoke = $allButton.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern)
+    $initialLabel = $allButton.Current.Name
+    $allInvoke.Invoke()
+    Start-Sleep -Milliseconds 200
+    $changedLabel = $allButton.Current.Name
+    if ($changedLabel -eq $initialLabel) { throw 'Select-all button did not toggle its label' }
+    $allInvoke.Invoke()
+    Start-Sleep -Milliseconds 200
+    if ($allButton.Current.Name -ne $initialLabel) { throw 'Second click did not restore select-all label' }
+    $defaultCondition = [Windows.Automation.PropertyCondition]::new(
+        [Windows.Automation.AutomationElement]::AutomationIdProperty, 'BtnDefault')
+    $defaultButton = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $defaultCondition)
+    $defaultButton.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()
+    Start-Sleep -Milliseconds 200
+    if ($footer.Current.Name -ne $defaultFooter) { throw 'Recommended selection did not restore original totals' }
+    $cleanCondition = [Windows.Automation.PropertyCondition]::new(
+        [Windows.Automation.AutomationElement]::AutomationIdProperty, 'BtnClean')
+    $cleanButton = $window.FindFirst([Windows.Automation.TreeScope]::Descendants, $cleanCondition)
+    if ($allButton.Current.BoundingRectangle.Left -ge $defaultButton.Current.BoundingRectangle.Left -or
+        $defaultButton.Current.BoundingRectangle.Left -ge $cleanButton.Current.BoundingRectangle.Left) {
+        throw 'Toolbar order must be select-all, recommended, clean'
+    }
+    Write-Host 'PASS select-all/clear-all toggles safely; toolbar order matches requested swap'
     foreach ($viewport in @('default', 'minimum')) {
         if ($viewport -eq 'minimum') {
             $transform = $window.GetCurrentPattern([Windows.Automation.TransformPattern]::Pattern)

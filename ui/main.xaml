@@ -167,17 +167,24 @@
 
         <!-- 工具栏 -->
         <Grid Grid.Row="1" Margin="0,14,0,10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
                 <Button x:Name="BtnScan" Content="重新扫描" Style="{StaticResource PrimaryButton}" />
-                <Button x:Name="BtnClean" Content="清理选中" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
+                <Button x:Name="BtnSelectAll" Content="全部选中" MinWidth="84" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
                 <Button x:Name="BtnDefault" Content="仅选推荐" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
-                <Button x:Name="BtnNone" Content="全部取消" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
+                <Button x:Name="BtnClean" Content="清理选中" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button x:Name="BtnAdmin" Content="管理员运行" Style="{StaticResource GhostButton}" Margin="0,0,10,0" />
                 <Button x:Name="BtnOpenPath" Content="打开位置" Style="{StaticResource GhostButton}" />
                 <Button x:Name="BtnLogs" Content="日志" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
             </StackPanel>
+            <CheckBox x:Name="ShowMissing" Grid.Row="1" Content="显示未找到的分类"
+                      IsChecked="False" HorizontalAlignment="Left" Margin="2,10,0,0"
+                      Foreground="{StaticResource TextSecondary}" FontSize="12" />
         </Grid>
 
         <!-- 列表 -->

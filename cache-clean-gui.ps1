@@ -65,6 +65,7 @@ public class CacheRow : INotifyPropertyChanged {
     public string FirstPath { get; set; }
     public bool CanClean { get; set; }
     public bool IsDefault { get; set; }
+    public bool IsMissing { get; set; }
     public double Bytes { get; set; }
     private bool _selected;
     public bool Selected {
@@ -139,10 +140,11 @@ $script:UI = @{
     BtnScan     = $win.FindName('BtnScan')
     BtnClean    = $win.FindName('BtnClean')
     BtnDefault  = $win.FindName('BtnDefault')
-    BtnNone     = $win.FindName('BtnNone')
+    BtnSelectAll = $win.FindName('BtnSelectAll')
     BtnOpenPath = $win.FindName('BtnOpenPath')
     BtnLogs     = $win.FindName('BtnLogs')
     BtnAdmin    = $win.FindName('BtnAdmin')
+    ShowMissing = $win.FindName('ShowMissing')
 }
 $script:UI.BtnAdmin.Visibility = $(if (Test-Admin) { 'Collapsed' } else { 'Visible' })
 
@@ -151,7 +153,8 @@ $script:Job = $null
 $script:Busy = $false
 $script:AppliedCount = 0
 $script:RowList = New-Object 'System.Collections.ObjectModel.ObservableCollection[CacheRow]'
-$script:UI.Grid.ItemsSource = $script:RowList
+$script:RowView = [Windows.Data.CollectionViewSource]::GetDefaultView($script:RowList)
+$script:UI.Grid.ItemsSource = $script:RowView
 
 # 扫描/清理共用的后台状态
 $script:Sync = [hashtable]::Synchronized(@{
@@ -173,25 +176,47 @@ function Set-Busy {
     $script:UI.BtnScan.IsEnabled = -not $On
     $script:UI.BtnClean.IsEnabled = -not $On
     $script:UI.BtnDefault.IsEnabled = -not $On
-    $script:UI.BtnNone.IsEnabled = -not $On
     $script:UI.BtnAdmin.IsEnabled = -not $On
+    $script:UI.ShowMissing.IsEnabled = -not ($On -and $script:Sync.Phase -eq 'clean')
     # 扫描时允许浏览已完成的行（只是暂时不能清理）；清理时锁表避免删到正在统计的目录
     $script:UI.Grid.IsEnabled = -not ($On -and $script:Sync.Phase -eq 'clean')
     $script:UI.Progress.Visibility = $(if ($On) { 'Visible' } else { 'Hidden' })
     $script:UI.Progress.IsIndeterminate = $On
     if ($Text) { $script:UI.StatusText.Text = $Text }
+    Update-Totals
 }
 
 function Update-Totals {
     $sum = [double]0
     $count = 0
     $available = 0
+    $selectedAvailable = 0
     foreach ($r in $script:AllRows) {
-        if ($r.CanClean) { $available++ }
+        if ($r.CanClean) {
+            $available++
+            if ($r.Selected) { $selectedAvailable++ }
+        }
         if ($r.Selected) { $sum += $r.Bytes; $count++ }
     }
     $script:UI.TotalText.Text = Format-Size -Bytes $sum
-    $script:UI.SelectedText.Text = ('已选 {0} 项 · 共 {1} 项' -f $count, $script:AllRows.Count)
+    $script:UI.SelectedText.Text = ('已选 {0} 项 · 显示 {1}/{2} 项' -f $count, $script:RowView.Count, $script:AllRows.Count)
+    $script:UI.BtnSelectAll.Content = $(if ($available -gt 0 -and $selectedAvailable -eq $available) { '全部取消' } else { '全部选中' })
+    $script:UI.BtnSelectAll.IsEnabled = (-not $script:Busy -and $available -gt 0)
+}
+
+function Toggle-AllSelection {
+    if ($script:Busy) { return }
+    $selectAll = @($script:AllRows | Where-Object { $_.CanClean -and -not $_.Selected }).Count -gt 0
+    foreach ($r in $script:AllRows) { $r.Selected = ($selectAll -and $r.CanClean) }
+    Update-Totals
+}
+
+function Update-CategoryView {
+    $script:RowView.Filter = [Predicate[object]]{
+        param($row)
+        return ([bool]$script:UI.ShowMissing.IsChecked -or -not $row.IsMissing)
+    }
+    Update-Totals
 }
 
 function Start-CacheJob {
@@ -272,6 +297,7 @@ function Append-Rows {
         $row.FirstPath = [string]$r.FirstPath
         $row.CanClean = [bool]$r.CanClean
         $row.IsDefault = [bool]$r.Default
+        $row.IsMissing = ($r.StatusText -eq '无此目录')
         $row.Bytes = [double]$r.Bytes
         $row.Selected = [bool]$r.Selected
         $row.Add_PropertyChanged({ Update-Totals })
@@ -305,6 +331,9 @@ function Show-Detail {
 }
 
 # ------------------------------------------------------------------ 事件
+Update-CategoryView
+$script:UI.ShowMissing.Add_Checked({ Update-CategoryView })
+$script:UI.ShowMissing.Add_Unchecked({ Update-CategoryView })
 $script:UI.BtnScan.Add_Click({ Start-Scan })
 $script:UI.BtnAdmin.Add_Click({
     if ($script:Busy) { return }
@@ -324,9 +353,7 @@ $script:UI.BtnAdmin.Add_Click({
 $script:UI.BtnDefault.Add_Click({
         foreach ($r in $script:AllRows) { $r.Selected = ($r.IsDefault -and $r.CanClean) }
     })
-$script:UI.BtnNone.Add_Click({
-        foreach ($r in $script:AllRows) { $r.Selected = $false }
-    })
+$script:UI.BtnSelectAll.Add_Click({ Toggle-AllSelection })
 $script:UI.BtnOpenPath.Add_Click({
         $row = $script:UI.Grid.SelectedItem
         if ($row -and $row.FirstPath) {
