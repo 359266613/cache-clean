@@ -70,3 +70,15 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\smoke-exe.p
 ```
 
 `smoke-exe.ps1` 把 EXE 复制到独立目录，通过 Windows UI Automation 等待扫描完成，不执行清理操作。
+
+## 自动发布
+
+- 提交并推送到 `main/master` 后，GitHub Actions 自动计算版本、构建 EXE、创建标签和发布 Release，不再需要手动打标签。
+- 一次推送即一次构建；一次推送包含多个提交时只发布一版。PR 只构建，不发布；在其它分支手动运行也不发布。
+- 版本格式为 `1.0.构建序号`。例如构建序号 `23`，得到 EXE 版本 `1.0.23`，标签 `v1.0.23`。本地默认版本为 `1.0.0`。
+- 版本前两段只在 `build.ps1` 的默认 `Version` 参数维护，CI 通过 PowerShell 语法树读取主版本和次版本，并用 GitHub 构建序号替换第三段，不另写一份版本配置。
+- 同一任务重新运行沿用同一版本号，不创建下一版；构建序号可能因 PR、失败构建等出现间隔，不要求连续。
+- 每段版本号限定为 `0..65534`（构建序号至少为 1），超出范围明确失败，不再悄悄降级成 `0.0.1`。
+- Release 明确绑定本次构建的提交，附件为对应 EXE。缺少附件时发布失败；仓库须允许 Actions 写入内容。不可变 Release 策略可能阻止重跑时覆盖已发布附件。
+- 工作流不监听标签推送，因此自动创建标签不会再重复构建。手动触发入口仍保留，选择 `main/master` 即可发布。
+- 本地可执行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\ci-version.ps1` 验证版本计算。真正的 GitHub 发布需推送本次工作流修改后验证。

@@ -3,7 +3,6 @@ name: build
 on:
   push:
     branches: [main, master]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -27,14 +26,15 @@ jobs:
         id: ver
         shell: powershell
         run: |
-          $v = '0.0.1'
-          if ($env:GITHUB_REF -like 'refs/tags/v*') {
-            $v = ($env:GITHUB_REF -replace '^refs/tags/v', '')
-          }
-          # ps2exe 只接受 n / n.n / n.n.n / n.n.n.n
-          $v = ($v -replace '[^0-9.]', '')
-          if ($v -notmatch '^\d+(\.\d+){1,3}$') { $v = '0.0.1' }
+          $ErrorActionPreference = 'Stop'
+          $v = & .\scripts\ci-version.ps1 -RunNumber $env:GITHUB_RUN_NUMBER
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=v$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Build version: $v"
+
+      - name: 验证版本计算
+        shell: powershell
+        run: .\tests\ci-version.ps1
 
       - name: 打包单文件 exe
         shell: powershell
@@ -47,9 +47,16 @@ jobs:
           path: dist/CacheClean.exe
           if-no-files-found: error
 
-      - name: 打 tag 时自动发 Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: 自动创建标签并发布 Release
+        if: >-
+          (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: CacheClean v${{ steps.ver.outputs.version }}
           files: dist/CacheClean.exe
           generate_release_notes: true
+          fail_on_unmatched_files: true
+          make_latest: true
