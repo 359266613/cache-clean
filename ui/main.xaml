@@ -141,7 +141,7 @@
                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
                     <TextBlock Text="缓存清理" FontSize="20" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimary}" />
-                    <TextBlock Text="扫描本机可安全清理的缓存，勾选后一键清理；默认只清可再生成的缓存"
+                    <TextBlock Text="当前用户缓存"
                                FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,5,0,0" />
                 </StackPanel>
 
@@ -169,6 +169,7 @@
                 <Button x:Name="BtnNone" Content="全部取消" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
             </StackPanel>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="BtnAdmin" Content="管理员运行" Style="{StaticResource GhostButton}" Margin="0,0,10,0" />
                 <Button x:Name="BtnOpenPath" Content="打开位置" Style="{StaticResource GhostButton}" />
                 <Button x:Name="BtnLogs" Content="日志" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
             </StackPanel>
@@ -201,6 +202,7 @@
                                     <TextBlock Text="{Binding Label}" FontSize="14" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextPrimary}" />
                                     <TextBlock Text="{Binding Note}" FontSize="11.5" Margin="0,3,0,0"
+                                               ToolTip="{Binding Note}"
                                                Foreground="{StaticResource TextMuted}"
                                                TextTrimming="CharacterEllipsis" />
                                 </StackPanel>

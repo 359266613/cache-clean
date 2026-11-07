@@ -39,11 +39,11 @@ if (-not $root) {
 
 # 开发态从 lib 加载；打包成 exe 时核心逻辑已内联，函数已在当前作用域
 $corePath = Join-Path $root 'lib\cache-core.ps1'
-if (Test-Path -LiteralPath $corePath) {
+if ($script:EmbeddedCore) {
+    $script:CoreText = $script:EmbeddedCore
+} elseif (Test-Path -LiteralPath $corePath) {
     . $corePath
     $script:CoreText = Get-Content -LiteralPath $corePath -Raw -Encoding UTF8
-} elseif ($script:EmbeddedCore) {
-    $script:CoreText = $script:EmbeddedCore
 } else {
     throw '找不到核心脚本 lib\cache-core.ps1'
 }
@@ -82,17 +82,33 @@ public class CacheRow : INotifyPropertyChanged {
 
 # ------------------------------------------------------------------ 载入界面
 $uiPath = Join-Path $root 'ui\main.xaml'
-if (Test-Path -LiteralPath $uiPath) {
-    $xamlText = Get-Content -LiteralPath $uiPath -Raw -Encoding UTF8
-} elseif ($script:EmbeddedXaml) {
-    # 单文件 exe：界面定义在打包时内联
+if ($script:EmbeddedXaml) {
     $xamlText = $script:EmbeddedXaml
+} elseif (Test-Path -LiteralPath $uiPath) {
+    $xamlText = Get-Content -LiteralPath $uiPath -Raw -Encoding UTF8
 } else {
     throw '找不到界面定义 ui\main.xaml'
 }
 [xml]$uiXml = $xamlText
 $nodeReader = New-Object System.Xml.XmlNodeReader $uiXml
 $win = [Windows.Markup.XamlReader]::Load($nodeReader)
+$iconStream = $null
+try {
+    if ($script:EmbeddedIcon) {
+        $iconStream = [IO.MemoryStream]::new([Convert]::FromBase64String($script:EmbeddedIcon))
+    } elseif (Test-Path -LiteralPath (Join-Path $root 'clean.png')) {
+        $iconStream = [IO.File]::OpenRead((Join-Path $root 'clean.png'))
+    }
+    if ($iconStream) {
+        $icon = New-Object Windows.Media.Imaging.BitmapImage
+        $icon.BeginInit()
+        $icon.CacheOption = [Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $icon.StreamSource = $iconStream
+        $icon.EndInit()
+        $icon.Freeze()
+        $win.Icon = $icon
+    }
+} finally { if ($iconStream) { $iconStream.Dispose() } }
 
 $script:UI = @{
     Grid        = $win.FindName('Grid')
@@ -110,7 +126,9 @@ $script:UI = @{
     BtnNone     = $win.FindName('BtnNone')
     BtnOpenPath = $win.FindName('BtnOpenPath')
     BtnLogs     = $win.FindName('BtnLogs')
+    BtnAdmin    = $win.FindName('BtnAdmin')
 }
+$script:UI.BtnAdmin.Visibility = $(if (Test-Admin) { 'Collapsed' } else { 'Visible' })
 
 $script:AllRows = @()
 $script:Job = $null
@@ -140,6 +158,7 @@ function Set-Busy {
     $script:UI.BtnClean.IsEnabled = -not $On
     $script:UI.BtnDefault.IsEnabled = -not $On
     $script:UI.BtnNone.IsEnabled = -not $On
+    $script:UI.BtnAdmin.IsEnabled = -not $On
     # 扫描时允许浏览已完成的行（只是暂时不能清理）；清理时锁表避免删到正在统计的目录
     $script:UI.Grid.IsEnabled = -not ($On -and $script:Sync.Phase -eq 'clean')
     $script:UI.Progress.Visibility = $(if ($On) { 'Visible' } else { 'Hidden' })
@@ -165,6 +184,8 @@ function Start-CacheJob {
     $script:Sync.Phase = $Phase
     $script:Sync.Done = $false
     $script:Sync.Error = ''
+    $script:Sync.Rows = @()
+    $script:Sync.Results = @()
     $script:Sync.Ids = $Ids
     $script:Sync.Status = $(if ($Phase -eq 'scan') { '正在扫描…' } else { '正在清理…' })
     $script:Sync.DoneCount = 0
@@ -204,7 +225,8 @@ function Start-CacheJob {
 
     [void]$ps.AddScript($body).AddParameter('State', $script:Sync).AddParameter('Core', $corePath)
     $script:Job = $ps
-    [void]$ps.BeginInvoke()
+    $script:JobHandle = $ps.BeginInvoke()
+    $script:JobRunspace = $rs
 }
 
 function Reset-Rows {
@@ -267,6 +289,21 @@ function Show-Detail {
 
 # ------------------------------------------------------------------ 事件
 $script:UI.BtnScan.Add_Click({ Start-Scan })
+$script:UI.BtnAdmin.Add_Click({
+    if ($script:Busy) { return }
+    try {
+        $exe = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        if ([IO.Path]::GetFileName($exe) -ieq 'powershell.exe') {
+            $args = '-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "{0}"' -f (Join-Path $root 'cache-clean-gui.ps1')
+            Start-Process -FilePath $exe -ArgumentList $args -Verb RunAs -WindowStyle Hidden -ErrorAction Stop
+        } else {
+            Start-Process -FilePath $exe -Verb RunAs -WindowStyle Hidden -ErrorAction Stop
+        }
+        $win.Close()
+    } catch {
+        $script:UI.StatusText.Text = '未完成管理员启动：' + $_.Exception.Message
+    }
+})
 $script:UI.BtnDefault.Add_Click({
         foreach ($r in $script:AllRows) { $r.Selected = ($r.IsDefault -and $r.CanClean) }
     })
@@ -277,6 +314,8 @@ $script:UI.BtnOpenPath.Add_Click({
         $row = $script:UI.Grid.SelectedItem
         if ($row -and $row.FirstPath) {
             try { Start-Process explorer.exe -ArgumentList ('"{0}"' -f $row.FirstPath) } catch { }
+        } elseif ($row -and $row.Kind -eq 'recyclebin') {
+            Start-Process explorer.exe -ArgumentList 'shell:RecycleBinFolder'
         } elseif ($row) {
             [void][System.Windows.MessageBox]::Show('这个分类没有可用目录（可能不存在或需要管理员）。', '缓存清理', 'OK', 'Information')
         }
@@ -293,6 +332,8 @@ $script:UI.Grid.Add_MouseDoubleClick({
         $row = $script:UI.Grid.SelectedItem
         if ($row -and $row.FirstPath) {
             try { Start-Process explorer.exe -ArgumentList ('"{0}"' -f $row.FirstPath) } catch { }
+        } elseif ($row -and $row.Kind -eq 'recyclebin') {
+            Start-Process explorer.exe -ArgumentList 'shell:RecycleBinFolder'
         }
     })
 
@@ -342,6 +383,14 @@ $script:Timer.Add_Tick({
         }
 
         $phase = $script:Sync.Phase
+        # Done is set just before the pipeline exits; wait for its actual completion.
+        if (-not $script:JobHandle.IsCompleted) { return }
+        try { [void]$script:Job.EndInvoke($script:JobHandle) }
+        finally {
+            $script:Job.Dispose()
+            $script:JobRunspace.Dispose()
+            $script:Job = $null
+        }
         $script:Sync.Phase = 'idle'
         $err = $script:Sync.Error
         Set-Busy -On $false
@@ -371,7 +420,7 @@ $script:Timer.Add_Tick({
                 $total += [double]$r.Bytes
                 $files += [int]$r.Files
                 $failed += [int]$r.Failed
-                [void]$lines.Add(('  {0}  释放 {1}（{2} 个文件）' -f $r.Label, $r.SizeText, $r.Files))
+                [void]$lines.Add(('  {0}  释放 {1}（{2} 个文件） {3}' -f $r.Label, $r.SizeText, $r.Files, $r.Note))
             }
             $text = "已释放 {0}，共 {1} 个文件。`n`n{2}" -f (Format-Size -Bytes $total), $files.ToString('N0'), ($lines -join "`n")
             if ($failed -gt 0) { $text += ("`n`n有 {0} 个文件被占用或无权限，已跳过。" -f $failed) }
@@ -391,3 +440,4 @@ $win.Add_Closing({
     })
 
 [void]$win.ShowDialog()
+$script:Timer.Stop()

@@ -14,7 +14,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.1.1',
     [string]$OutDir
 )
 
@@ -45,6 +45,40 @@ Write-Host "读取源文件…"
 $core = Get-Content -LiteralPath $corePath -Raw -Encoding UTF8
 $xaml = Get-Content -LiteralPath $uiPath -Raw -Encoding UTF8
 $gui = Get-Content -LiteralPath $guiPath -Raw -Encoding UTF8
+$pngPath = Join-Path $root 'clean.png'
+if (-not (Test-Path -LiteralPath $pngPath)) { throw '缺少 clean.png' }
+Add-Type -AssemblyName System.Drawing
+$iconPath = Join-Path $OutDir 'CacheClean.ico'
+$source = [Drawing.Image]::FromFile($pngPath)
+try {
+    $images = @()
+    foreach ($size in @(16, 32, 48, 256)) {
+        $bitmap = New-Object Drawing.Bitmap($size, $size)
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        $stream = New-Object IO.MemoryStream
+        try {
+            $graphics.InterpolationMode = [Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+            $scale = [Math]::Min($size / $source.Width, $size / $source.Height)
+            $w = [int]($source.Width * $scale); $h = [int]($source.Height * $scale)
+            $graphics.DrawImage($source, [int](($size - $w) / 2), [int](($size - $h) / 2), $w, $h)
+            $bitmap.Save($stream, [Drawing.Imaging.ImageFormat]::Png)
+            $images += @{ Size = $size; Data = $stream.ToArray() }
+        } finally { $graphics.Dispose(); $bitmap.Dispose(); $stream.Dispose() }
+    }
+    $writer = New-Object IO.BinaryWriter([IO.File]::Create($iconPath))
+    try {
+        $writer.Write([uint16]0); $writer.Write([uint16]1); $writer.Write([uint16]$images.Count)
+        $offset = 6 + 16 * $images.Count
+        foreach ($image in $images) {
+            $dimension = $image.Size % 256
+            $writer.Write([byte]$dimension); $writer.Write([byte]$dimension)
+            $writer.Write([uint16]0); $writer.Write([uint16]1); $writer.Write([uint16]32)
+            $writer.Write([uint32]$image.Data.Length); $writer.Write([uint32]$offset)
+            $offset += $image.Data.Length
+        }
+        foreach ($image in $images) { $writer.Write([byte[]]$image.Data) }
+    } finally { $writer.Dispose() }
+} finally { $source.Dispose() }
 
 $marker = '#@@BODY@@'
 $idx = $gui.IndexOf($marker)
@@ -60,8 +94,9 @@ $b64Core = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($core))
 $embedded = '$script:EmbeddedXaml = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(' + "'" + $b64Xaml + "'" + '))' + $nl
 # 后台线程（runspace）需要独立一份核心逻辑；exe 里没有文件可 dot-source
 $embeddedCore = '$script:EmbeddedCore = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(' + "'" + $b64Core + "'" + '))' + $nl
+$embeddedIcon = '$script:EmbeddedIcon = ''' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($pngPath)) + '''' + $nl
 
-$merged = $head + $nl + $core + $nl + $embeddedCore + $nl + $embedded + $nl + $body
+$merged = $head + $nl + $core + $nl + $embeddedCore + $nl + $embedded + $nl + $embeddedIcon + $nl + $body
 
 $mergedPath = Join-Path $env:TEMP ('cache-clean-build-{0}.ps1' -f ([guid]::NewGuid().ToString('N').Substring(0, 8)))
 [System.IO.File]::WriteAllText($mergedPath, $merged, (New-Object System.Text.UTF8Encoding($true)))
@@ -87,6 +122,7 @@ $ps2exeArgs = @{
     STA         = $true
     DPIAware    = $true
     x64         = $true
+    iconFile    = $iconPath
     title       = '缓存清理'
     description = 'Windows 缓存清理工具'
     product     = 'Cache Clean'

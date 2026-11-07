@@ -7,9 +7,35 @@ if (-not ('CacheFsScan' -as [type])) {
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 
 public static class CacheFsScan
 {
+    private static readonly SemaphoreSlim ScanSlots = new SemaphoreSlim(2);
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
+    private struct RecycleInfo { public int cbSize; public long bytes; public long items; }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHQueryRecycleBinW(string root, ref RecycleInfo info);
+    public static long[] RecycleStats()
+    {
+        var info = new RecycleInfo();
+        info.cbSize = Marshal.SizeOf(typeof(RecycleInfo));
+        Marshal.ThrowExceptionForHR(SHQueryRecycleBinW(null, ref info));
+        return new long[] { info.bytes, info.items };
+    }
+    public static Task<long[]> BeginMeasure(string root)
+    {
+        return Task.Run(() => {
+            ScanSlots.Wait();
+            try {
+                long files, failed;
+                long bytes = Measure(root, out files, out failed);
+                return new long[] { bytes, files, failed };
+            } finally { ScanSlots.Release(); }
+        });
+    }
     public static long Measure(string root, out long files, out long failed)
     {
         files = 0; failed = 0; long bytes = 0;
@@ -19,13 +45,13 @@ public static class CacheFsScan
         {
             string cur = stack.Pop();
             DirectoryInfo di;
-            try { di = new DirectoryInfo(cur); if (!di.Exists) continue; }
+            try { di = new DirectoryInfo(cur); if ((di.Attributes & FileAttributes.ReparsePoint) != 0) continue; }
             catch { failed++; continue; }
             try
             {
                 foreach (var fi in di.EnumerateFiles())
                 {
-                    try { bytes += fi.Length; files++; }
+                    try { if ((fi.Attributes & FileAttributes.ReparsePoint) != 0) continue; bytes += fi.Length; files++; }
                     catch { failed++; }
                 }
             }
@@ -77,6 +103,7 @@ public static class CacheFsScan
             {
                 try
                 {
+                    if ((f.Attributes & FileAttributes.ReparsePoint) != 0) continue;
                     long l = f.Length;
                     f.Delete();
                     bytes += l; files++;
@@ -126,7 +153,7 @@ $script:CacheCatalog = @(
                   '%USERPROFILE%\.npm\_cacache', '%USERPROFILE%\.npm\_npx')
     }
     [pscustomobject]@{
-        Id = 'dev-pnpm'; Label = 'pnpm 存储'; Default = $true; Admin = $false; Kind = 'dir'
+        Id = 'dev-pnpm'; Label = 'pnpm 存储'; Default = $false; Admin = $false; Kind = 'dir'
         Note = '全局 store 与元数据缓存；已装项目的硬链接不受影响'
         Paths = @('%LOCALAPPDATA%\pnpm\store', '%LOCALAPPDATA%\pnpm-cache', '%USERPROFILE%\.pnpm-store')
     }
@@ -141,18 +168,17 @@ $script:CacheCatalog = @(
         Paths = @('%LOCALAPPDATA%\Yarn\Cache', '%LOCALAPPDATA%\Yarn\berry\cache')
     }
     [pscustomobject]@{
-        Id = 'dev-other'; Label = '其它开发缓存'; Default = $true; Admin = $false; Kind = 'dir'
+        Id = 'dev-other'; Label = '其它开发缓存'; Default = $false; Admin = $false; Kind = 'dir'
         Note = 'go-build、cargo、gradle 缓存'
         Paths = @('%LOCALAPPDATA%\go-build', '%USERPROFILE%\go\pkg\mod\cache',
                   '%USERPROFILE%\.cargo\registry\cache', '%USERPROFILE%\.gradle\caches')
     }
     [pscustomobject]@{
         Id = 'browser'; Label = '浏览器缓存'; Default = $false; Admin = $false; Kind = 'dir'
-        Note = 'Edge / Chrome / Firefox 缓存；建议先完全退出浏览器再清'
+        Note = '仅网页/代码/GPU 缓存；保留账号、密码、Cookies 和网站存储；先退出浏览器'
         Paths = @('%LOCALAPPDATA%\Microsoft\Edge\User Data\*\Cache',
                   '%LOCALAPPDATA%\Microsoft\Edge\User Data\*\Code Cache',
                   '%LOCALAPPDATA%\Microsoft\Edge\User Data\*\GPUCache',
-                  '%LOCALAPPDATA%\Microsoft\Edge\User Data\Service Worker\CacheStorage',
                   '%LOCALAPPDATA%\Google\Chrome\User Data\*\Cache',
                   '%LOCALAPPDATA%\Google\Chrome\User Data\*\Code Cache',
                   '%LOCALAPPDATA%\Google\Chrome\User Data\*\GPUCache',
@@ -160,19 +186,19 @@ $script:CacheCatalog = @(
     }
     [pscustomobject]@{
         Id = 'recyclebin'; Label = '回收站'; Default = $false; Admin = $false; Kind = 'recyclebin'
-        Note = '清空回收站，删除后不可恢复，请先确认'
+        Note = '当前用户所有磁盘的回收站；数量为项目数（含文件夹），清空后不可恢复'
         Paths = @()
     }
     [pscustomobject]@{
         Id = 'windows-temp'; Label = '系统临时文件'; Default = $false; Admin = $true; Kind = 'dir'
-        Note = 'C:\Windows\Temp，需要管理员权限'
+        Note = '%SystemRoot%\Temp，完整统计与清理需要管理员权限'
         Paths = @('%SystemRoot%\Temp')
     }
     [pscustomobject]@{
         Id = 'windows-update'; Label = 'Windows 更新缓存'; Default = $false; Admin = $true; Kind = 'dir'
         Note = 'SoftwareDistribution\Download；清理时临时停止 wuauserv'
         Paths = @('%SystemRoot%\SoftwareDistribution\Download')
-        Service = 'wuauserv'
+        Service = @('wuauserv', 'BITS')
     }
 )
 
@@ -204,7 +230,7 @@ function Test-SafeTarget {
     param([string]$Path)
     if (-not $Path) { return $false }
     $p = ([System.IO.Path]::GetFullPath($Path)).TrimEnd('\')
-    $blocked = New-Object 'System.Collections.Generic.HashSet[string]'
+    $blocked = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $cands = @(
         [System.IO.Path]::GetPathRoot($p),
         [Environment]::GetFolderPath('UserProfile'),
@@ -222,6 +248,14 @@ function Test-SafeTarget {
     }
     if ($blocked.Contains($p)) { return $false }
     if ($p.Length -lt 8) { return $false }
+    # Reject redirected ancestors as well as the target itself.
+    $ancestor = $p
+    while ($ancestor) {
+        try {
+            if (([IO.File]::GetAttributes($ancestor) -band [IO.FileAttributes]::ReparsePoint) -ne 0) { return $false }
+        } catch { return $false }
+        $ancestor = [IO.Path]::GetDirectoryName($ancestor)
+    }
     return $true
 }
 
@@ -246,7 +280,7 @@ function Get-CategoryTargets {
         foreach ($t in @(Resolve-Target -Pattern $pat)) {
             $key = $t.ToLowerInvariant()
             try { $key = ([System.IO.Path]::GetFullPath($t)).ToLowerInvariant() } catch { }
-            if ($Seen) { if (-not $Seen.Add($key)) { continue } }
+            if ($null -ne $Seen) { if (-not $Seen.Add($key)) { continue } }
             if (-not (Test-SafeTarget -Path $t)) { continue }
             $out += $t
         }
@@ -379,13 +413,22 @@ function Invoke-CacheScan {
 
     $seen = New-Object 'System.Collections.Generic.HashSet[string]'
     $rows = New-Object System.Collections.ArrayList
+    # Queue independent roots with bounded I/O concurrency, retaining catalog order.
+    $prepared = @{}
+    foreach ($c in $cats) {
+        $targets = @(Get-CategoryTargets -Cat $c -Seen $seen)
+        $tasks = @()
+        if ($c.Kind -eq 'dir') {
+            foreach ($t in $targets) { $tasks += [CacheFsScan]::BeginMeasure($t) }
+        }
+        $prepared[$c.Id] = @{ Targets = $targets; Tasks = $tasks }
+    }
     $i = 0
     foreach ($c in $cats) {
         $i++
         if ($State) { $State['Status'] = ('正在统计 {0}（{1}/{2}）' -f $c.Label, $i, $cats.Count) }
 
-        $targets = @()
-        if ($c.Kind -ne 'recyclebin') { $targets = @(Get-CategoryTargets -Cat $c -Seen $seen) }
+        $targets = $prepared[$c.Id].Targets
 
         $bytes = [double]0
         $files = 0
@@ -393,32 +436,41 @@ function Invoke-CacheScan {
         $filesText = '—'
         $locText = '—'
 
-        if ($c.Admin -and -not $isAdmin) {
-            $status = '需要管理员'
-        } elseif ($c.Kind -eq 'recyclebin') {
-            $status = '可清空 · 体积未统计'
+        $failed = [long]0
+        if ($c.Kind -eq 'recyclebin') {
+            try {
+                $rb = [CacheFsScan]::RecycleStats()
+                $bytes = $rb[0]; $files = $rb[1]
+                $sizeText = Format-Size $bytes
+                $filesText = $files.ToString('N0')
+                $locText = '当前用户'
+                $status = $(if ($files -eq 0) { '已为空' } else { '可清空' })
+            } catch { $status = '统计失败'; $failed++ }
         } elseif ($targets.Count -eq 0) {
             $status = '无此目录'
         } else {
             if ($c.Kind -eq 'files') {
                 foreach ($t in $targets) {
-                    try { $bytes += ([System.IO.FileInfo]$t).Length; $files++ } catch { }
+                    try { $bytes += ([System.IO.FileInfo]$t).Length; $files++ } catch { $failed++ }
                 }
             } else {
-                foreach ($t in $targets) {
-                    $st = Get-TreeStats -Root $t
-                    $bytes += $st.Bytes
-                    $files += $st.Files
+                foreach ($task in $prepared[$c.Id].Tasks) {
+                    $st = $task.GetAwaiter().GetResult()
+                    $bytes += $st[0]
+                    $files += $st[1]
+                    $failed += $st[2]
                 }
             }
             $sizeText = Format-Size -Bytes $bytes
             $filesText = $files.ToString('N0')
             $locText = ('{0} 处' -f $targets.Count)
             $status = $(if ($bytes -le 0) { '已为空' } else { '可清理' })
+            if ($failed -gt 0) { $status = '部分无法访问' }
         }
 
         if ($c.Admin -and -not $isAdmin) {
-            $sizeText = '—'; $filesText = '—'
+            $status = '需提权清理'
+            if ($failed -gt 0 -or $targets.Count -eq 0) { $sizeText = '权限不足'; $filesText = '未知' }
             if ($targets.Count -gt 0) { $locText = ('{0} 处' -f $targets.Count) }
         }
 
@@ -431,6 +483,7 @@ function Invoke-CacheScan {
                 Default    = [bool]$c.Default
                 Bytes      = $bytes
                 Files      = $files
+                Failed     = $failed
                 SizeText   = $sizeText
                 FilesText  = $filesText
                 LocText    = $locText
@@ -467,6 +520,7 @@ function Invoke-CacheClean {
     foreach ($id in $Ids) {
         $c = Get-CacheCategory -Id $id
         if (-not $c) { continue }
+        if ($c.Admin -and -not (Test-Admin)) { throw '系统分类需要管理员权限，请先以管理员身份重新启动。' }
         $i++
         if ($State) { $State['Status'] = ('正在清理 {0}（{1}/{2}）' -f $c.Label, $i, $Ids.Count) }
 
@@ -474,10 +528,17 @@ function Invoke-CacheClean {
         if ($c.Kind -ne 'recyclebin') { $targets = @(Get-CategoryTargets -Cat $c) }
 
         $stats = @{ Bytes = [double]0; Files = 0; Failed = 0 }
+        $note = ''
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
         if ($c.Kind -eq 'recyclebin') {
-            try { Clear-RecycleBin -Force -ErrorAction Stop } catch { $stats.Failed++ }
+            try {
+                $before = [CacheFsScan]::RecycleStats()
+                Clear-RecycleBin -Force -ErrorAction Stop
+                $after = [CacheFsScan]::RecycleStats()
+                $stats.Bytes = [Math]::Max(0, $before[0] - $after[0])
+                $stats.Files = [Math]::Max(0, $before[1] - $after[1])
+            } catch { $stats.Failed++ }
         } elseif ($c.Kind -eq 'files') {
             foreach ($t in $targets) {
                 $len = [double]0
@@ -489,26 +550,37 @@ function Invoke-CacheClean {
                 } catch { $stats.Failed++ }
             }
         } else {
-            $service = $c.Service
-            $stopped = $false
-            if ($service) {
-                try {
-                    Stop-Service -Name $service -Force -ErrorAction Stop
-                    $stopped = $true
-                } catch {
-                    $sw.Stop()
-                    [void]$results.Add([pscustomobject]@{
-                            Id = $c.Id; Label = $c.Label; Bytes = [double]0; Files = 0; Failed = 1
-                            Seconds = [math]::Round($sw.Elapsed.TotalSeconds, 1); SizeText = '0 B'
-                            Note = ('无法停止服务 {0}，已跳过' -f $service)
-                        })
-                    continue
-                }
-            }
+            $stopped = @()
+            $serviceReady = $true
             try {
-                foreach ($t in $targets) { Clear-DirectoryContents -Root $t -Stats $stats }
+                foreach ($service in @($c.Service)) {
+                    if (-not $service) { continue }
+                    try {
+                        $svc = Get-Service -Name $service -ErrorAction Stop
+                        if ($svc.Status -eq 'Stopped') { continue }
+                        if ($svc.Status -ne 'Running') { throw '服务正处于状态转换中' }
+                        $stopped += $service
+                        Stop-Service -Name $service -ErrorAction Stop
+                        (Get-Service $service).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(20))
+                    } catch {
+                        $stats.Failed++
+                        $note = ('无法停止服务 {0}，已跳过；{1}' -f $service, $_.Exception.Message)
+                        $serviceReady = $false
+                        break
+                    }
+                }
+                if ($serviceReady) {
+                    foreach ($t in $targets) { Clear-DirectoryContents -Root $t -Stats $stats }
+                }
             } finally {
-                if ($stopped) { try { Start-Service -Name $service -ErrorAction SilentlyContinue } catch { } }
+                [array]::Reverse($stopped)
+                foreach ($service in $stopped) {
+                    try { Start-Service -Name $service -ErrorAction Stop }
+                    catch {
+                        $stats.Failed++
+                        $note += (' 服务 {0} 恢复失败，请手动检查。' -f $service)
+                    }
+                }
             }
         }
 
@@ -521,7 +593,7 @@ function Invoke-CacheClean {
                 Failed  = $stats.Failed
                 Seconds = [math]::Round($sw.Elapsed.TotalSeconds, 1)
                 SizeText = (Format-Size -Bytes $stats.Bytes)
-                Note    = ''
+                Note    = $note
             })
         [void](Write-CacheLog ('{0}`t{1}`t{2} 个文件`t失败 {3}`t{4}' -f (Get-Date -Format 's'), $c.Id, $stats.Files, $stats.Failed, (Format-Size -Bytes $stats.Bytes)))
     }
