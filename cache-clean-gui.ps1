@@ -92,6 +92,22 @@ if ($script:EmbeddedXaml) {
 [xml]$uiXml = $xamlText
 $nodeReader = New-Object System.Xml.XmlNodeReader $uiXml
 $win = [Windows.Markup.XamlReader]::Load($nodeReader)
+$appVersion = '开发版'
+if ($script:EmbeddedVersion) {
+    $appVersion = 'v' + $script:EmbeddedVersion
+} else {
+    $buildPath = Join-Path $root 'build.ps1'
+    if (Test-Path -LiteralPath $buildPath) {
+        $tokens = $null; $errors = $null
+        $ast = [Management.Automation.Language.Parser]::ParseFile($buildPath, [ref]$tokens, [ref]$errors)
+        $versionParam = @($ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'Version' })
+        if ($errors.Count -eq 0 -and $versionParam.Count -eq 1 -and $versionParam[0].DefaultValue) {
+            $appVersion = 'v' + [string]$versionParam[0].DefaultValue.SafeGetValue()
+        }
+    }
+}
+$win.FindName('VersionText').Text = $appVersion
+$win.Title = '缓存清理 ' + $appVersion
 $iconStream = $null
 try {
     if ($script:EmbeddedIcon) {

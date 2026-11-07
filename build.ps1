@@ -95,8 +95,9 @@ $embedded = '$script:EmbeddedXaml = [System.Text.Encoding]::UTF8.GetString([Syst
 # 后台线程（runspace）需要独立一份核心逻辑；exe 里没有文件可 dot-source
 $embeddedCore = '$script:EmbeddedCore = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String(' + "'" + $b64Core + "'" + '))' + $nl
 $embeddedIcon = '$script:EmbeddedIcon = ''' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($pngPath)) + '''' + $nl
+$embeddedVersion = '$script:EmbeddedVersion = ''' + $Version + '''' + $nl
 
-$merged = $head + $nl + $core + $nl + $embeddedCore + $nl + $embedded + $nl + $embeddedIcon + $nl + $body
+$merged = $head + $nl + $core + $nl + $embeddedCore + $nl + $embedded + $nl + $embeddedIcon + $nl + $embeddedVersion + $nl + $body
 
 $mergedPath = Join-Path $env:TEMP ('cache-clean-build-{0}.ps1' -f ([guid]::NewGuid().ToString('N').Substring(0, 8)))
 [System.IO.File]::WriteAllText($mergedPath, $merged, (New-Object System.Text.UTF8Encoding($true)))
@@ -126,7 +127,7 @@ $ps2exeArgs = @{
     title       = '缓存清理'
     description = 'Windows 缓存清理工具'
     product     = 'Cache Clean'
-    company     = 'cache-clean'
+    company     = '开元咨询-三部'
     copyright   = 'MIT License'
     version     = $Version
 }

@@ -139,9 +139,14 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="缓存清理" FontSize="20" FontWeight="SemiBold"
-                               Foreground="{StaticResource TextPrimary}" />
-                    <TextBlock Text="当前用户缓存"
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="缓存清理" FontSize="20" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimary}" />
+                        <TextBlock x:Name="VersionText" Text="" FontSize="12"
+                                   Foreground="{StaticResource TextSecondary}"
+                                   VerticalAlignment="Center" Margin="12,3,0,0" />
+                    </StackPanel>
+                    <TextBlock x:Name="DeveloperText" Text="开发者：开元咨询-三部"
                                FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,5,0,0" />
                 </StackPanel>
 
