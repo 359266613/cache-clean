@@ -25,6 +25,15 @@ if (-not (Test-Path -LiteralPath $OutDir)) { [void](New-Item -ItemType Directory
 
 Import-Module ps2exe -ErrorAction Stop
 
+# ps2exe 的 -version 只接受 n / n.n / n.n.n / n.n.n.n，其它写法（如 1.0.0-beta）一律归一化
+$normalized = ($Version -replace '^[vV]', '')
+$normalized = ($normalized -replace '[^0-9.]', '')
+if ($normalized -notmatch '^[0-9]+(\.[0-9]+){0,3}$') { $normalized = '1.0.0' }
+if ($normalized -ne $Version) {
+    Write-Host ("版本号 {0} 不符合 ps2exe 要求，改用 {1}" -f $Version, $normalized) -ForegroundColor Yellow
+}
+$Version = $normalized
+
 $corePath = Join-Path $root 'lib\cache-core.ps1'
 $uiPath = Join-Path $root 'ui\main.xaml'
 $guiPath = Join-Path $root 'cache-clean-gui.ps1'

@@ -27,11 +27,13 @@ jobs:
         id: ver
         shell: powershell
         run: |
-          $v = '0.0.0-dev'
+          $v = '0.0.1'
           if ($env:GITHUB_REF -like 'refs/tags/v*') {
             $v = ($env:GITHUB_REF -replace '^refs/tags/v', '')
           }
-          if ($v -notmatch '^\d+(\.\d+){1,3}$') { $v = '0.0.0-dev' }
+          # ps2exe 只接受 n / n.n / n.n.n / n.n.n.n
+          $v = ($v -replace '[^0-9.]', '')
+          if ($v -notmatch '^\d+(\.\d+){1,3}$') { $v = '0.0.1' }
           "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: 打包单文件 exe
