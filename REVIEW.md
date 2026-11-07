@@ -14,6 +14,8 @@
 - pnpm 存储、其它开发缓存改为默认不勾选。这些内容可能影响离线构建，不应无条件推荐清理。
 - 后台任务结束后释放 PowerShell 与 runspace，重新扫描时重置共享结果，避免显示上次结果。
 - 单文件 EXE 优先使用内嵌核心和界面，不被旁边同名源码覆盖。
+- v1.1.2：清理完成弹窗绑定主窗口，弹窗前先刷新“清理完成”状态，避免底部一直显示最后一个分类。清理期间显示已用时间。
+- v1.1.2：回收站部分清理失败后仍重新统计实际差额，错误详情和剩余项目写入结果；已空的回收站直接成功返回。
 
 ## 搜索范围是否完整
 
@@ -62,6 +64,7 @@
 ```powershell
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\verify.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\browser-protection.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\recycle-completion.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\smoke-exe.ps1
 ```

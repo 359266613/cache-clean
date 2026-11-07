@@ -204,6 +204,8 @@ $script:CacheCatalog = @(
 
 function Get-CacheCatalog { return $script:CacheCatalog }
 
+function Get-RecycleBinStats { [CacheFsScan]::RecycleStats() }
+
 function Get-CacheCategory {
     param([string]$Id)
     return ($script:CacheCatalog | Where-Object { $_.Id -eq $Id } | Select-Object -First 1)
@@ -439,7 +441,7 @@ function Invoke-CacheScan {
         $failed = [long]0
         if ($c.Kind -eq 'recyclebin') {
             try {
-                $rb = [CacheFsScan]::RecycleStats()
+                $rb = Get-RecycleBinStats
                 $bytes = $rb[0]; $files = $rb[1]
                 $sizeText = Format-Size $bytes
                 $filesText = $files.ToString('N0')
@@ -532,13 +534,35 @@ function Invoke-CacheClean {
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
         if ($c.Kind -eq 'recyclebin') {
+            $before = $null
             try {
-                $before = [CacheFsScan]::RecycleStats()
-                Clear-RecycleBin -Force -ErrorAction Stop
-                $after = [CacheFsScan]::RecycleStats()
-                $stats.Bytes = [Math]::Max(0, $before[0] - $after[0])
-                $stats.Files = [Math]::Max(0, $before[1] - $after[1])
-            } catch { $stats.Failed++ }
+                $before = Get-RecycleBinStats
+                if ($before[1] -gt 0) {
+                    $oldProgress = $ProgressPreference
+                    try {
+                        $ProgressPreference = 'SilentlyContinue'
+                        Clear-RecycleBin -Force -ErrorAction Stop
+                    } finally { $ProgressPreference = $oldProgress }
+                }
+            } catch {
+                $stats.Failed++
+                $note = '回收站清理未全部完成：' + $_.Exception.Message
+            } finally {
+                # Windows can remove most items and still report a failure.
+                if ($null -ne $before) {
+                    try {
+                        $after = Get-RecycleBinStats
+                        $stats.Bytes = [Math]::Max(0, $before[0] - $after[0])
+                        $stats.Files = [Math]::Max(0, $before[1] - $after[1])
+                        if ($after[1] -gt 0) {
+                            $note += (' 回收站剩余 {0} 个项目，{1}。' -f $after[1], (Format-Size $after[0]))
+                        }
+                    } catch {
+                        $stats.Failed++
+                        $note += ' 无法读取清理后的回收站统计：' + $_.Exception.Message
+                    }
+                }
+            }
         } elseif ($c.Kind -eq 'files') {
             foreach ($t in $targets) {
                 $len = [double]0
@@ -595,7 +619,7 @@ function Invoke-CacheClean {
                 SizeText = (Format-Size -Bytes $stats.Bytes)
                 Note    = $note
             })
-        [void](Write-CacheLog ('{0}`t{1}`t{2} 个文件`t失败 {3}`t{4}' -f (Get-Date -Format 's'), $c.Id, $stats.Files, $stats.Failed, (Format-Size -Bytes $stats.Bytes)))
+        [void](Write-CacheLog ("{0}`t{1}`t{2} 个文件`t失败 {3}`t{4}`t{5}" -f (Get-Date -Format 's'), $c.Id, $stats.Files, $stats.Failed, (Format-Size -Bytes $stats.Bytes), $note))
     }
 
     if ($State) { $State['Status'] = '清理完成' }

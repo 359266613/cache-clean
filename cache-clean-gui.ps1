@@ -192,6 +192,7 @@ function Start-CacheJob {
     $script:Sync.TotalCount = 0
     $script:Sync.CoreText = [string]$script:CoreText
     $script:AppliedCount = 0
+    $script:JobWatch = [Diagnostics.Stopwatch]::StartNew()
 
     if ($Phase -eq 'scan') {
         $script:UI.TotalText.Text = '…'
@@ -317,7 +318,7 @@ $script:UI.BtnOpenPath.Add_Click({
         } elseif ($row -and $row.Kind -eq 'recyclebin') {
             Start-Process explorer.exe -ArgumentList 'shell:RecycleBinFolder'
         } elseif ($row) {
-            [void][System.Windows.MessageBox]::Show('这个分类没有可用目录（可能不存在或需要管理员）。', '缓存清理', 'OK', 'Information')
+            [void][System.Windows.MessageBox]::Show($win, '这个分类没有可用目录（可能不存在或需要管理员）。', '缓存清理', 'OK', 'Information')
         }
     })
 $script:UI.BtnLogs.Add_Click({
@@ -341,7 +342,7 @@ $script:UI.BtnClean.Add_Click({
         if ($script:Busy) { return }
         $selected = @($script:AllRows | Where-Object { $_.Selected })
         if ($selected.Count -eq 0) {
-            [void][System.Windows.MessageBox]::Show('还没有勾选任何分类。可以先点「仅选推荐」。', '缓存清理', 'OK', 'Information')
+            [void][System.Windows.MessageBox]::Show($win, '还没有勾选任何分类。可以先点「仅选推荐」。', '缓存清理', 'OK', 'Information')
             return
         }
         $sum = [double]0
@@ -350,7 +351,7 @@ $script:UI.BtnClean.Add_Click({
         if ($names.Length -gt 160) { $names = $names.Substring(0, 160) + '…' }
 
         $msg = "将清理以下 {0} 项，预计释放 {1}：`n`n{2}`n`n清理后，脚本/软件缓存需要时会重新生成；请确认没有正在运行的相关程序。是否继续？" -f $selected.Count, (Format-Size -Bytes $sum), $names
-        $answer = [System.Windows.MessageBox]::Show($msg, '确认清理', 'YesNo', 'Question')
+        $answer = [System.Windows.MessageBox]::Show($win, $msg, '确认清理', 'YesNo', 'Question')
         if ($answer -ne 'Yes') { return }
 
         Start-CacheJob -Phase 'clean' -Ids @($selected | ForEach-Object { $_.Id })
@@ -377,7 +378,7 @@ $script:Timer.Add_Tick({
                     $script:UI.StatusText.Text = $script:Sync.Status
                 }
             } elseif ($script:Sync.Status) {
-                $script:UI.StatusText.Text = $script:Sync.Status
+                $script:UI.StatusText.Text = ('{0} · 已用 {1:N0} 秒' -f $script:Sync.Status, $script:JobWatch.Elapsed.TotalSeconds)
             }
             return
         }
@@ -397,7 +398,7 @@ $script:Timer.Add_Tick({
 
         if ($err) {
             $script:UI.StatusText.Text = '出错：' + $err
-            [void][System.Windows.MessageBox]::Show('操作失败：' + $err, '缓存清理', 'OK', 'Error')
+            [void][System.Windows.MessageBox]::Show($win, ('操作失败：' + $err), '缓存清理', 'OK', 'Error')
             return
         }
 
@@ -423,8 +424,9 @@ $script:Timer.Add_Tick({
                 [void]$lines.Add(('  {0}  释放 {1}（{2} 个文件） {3}' -f $r.Label, $r.SizeText, $r.Files, $r.Note))
             }
             $text = "已释放 {0}，共 {1} 个文件。`n`n{2}" -f (Format-Size -Bytes $total), $files.ToString('N0'), ($lines -join "`n")
-            if ($failed -gt 0) { $text += ("`n`n有 {0} 个文件被占用或无权限，已跳过。" -f $failed) }
-            [void][System.Windows.MessageBox]::Show($text, '清理完成', 'OK', 'Information')
+            if ($failed -gt 0) { $text += ("`n`n有 {0} 项未能完成（占用、权限或服务错误），详见分类结果和日志。" -f $failed) }
+            $script:UI.StatusText.Text = ('清理完成 · 已释放 {0} · 未完成 {1} 项' -f (Format-Size -Bytes $total), $failed)
+            [void][System.Windows.MessageBox]::Show($win, $text, '清理完成', 'OK', 'Information')
             Start-Scan
         }
     })
@@ -435,7 +437,7 @@ $win.Add_Closing({
         param($s, $e)
         if ($script:Busy) {
             $e.Cancel = $true
-            [void][System.Windows.MessageBox]::Show('正在处理，请等待完成后再关闭。', '缓存清理', 'OK', 'Information')
+            [void][System.Windows.MessageBox]::Show($win, '正在处理，请等待完成后再关闭。', '缓存清理', 'OK', 'Information')
         }
     })
 
