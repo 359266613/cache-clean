@@ -1,0 +1,53 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: 拉取源码
+        uses: actions/checkout@v4
+
+      - name: 安装 ps2exe
+        shell: powershell
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module ps2exe -Scope CurrentUser -Force -AllowClobber
+
+      - name: 计算版本号
+        id: ver
+        shell: powershell
+        run: |
+          $v = '0.0.0-dev'
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $v = ($env:GITHUB_REF -replace '^refs/tags/v', '')
+          }
+          if ($v -notmatch '^\d+(\.\d+){1,3}$') { $v = '0.0.0-dev' }
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: 打包单文件 exe
+        shell: powershell
+        run: .\build.ps1 -Version ${{ steps.ver.outputs.version }}
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: CacheClean-${{ steps.ver.outputs.version }}
+          path: dist/CacheClean.exe
+          if-no-files-found: error
+
+      - name: 打 tag 时自动发 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/CacheClean.exe
+          generate_release_notes: true

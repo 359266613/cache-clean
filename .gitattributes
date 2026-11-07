@@ -1,0 +1,6 @@
+* text=auto
+
+# Windows 脚本保持 CRLF，避免 cmd 解析异常
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.xaml text eol=crlf

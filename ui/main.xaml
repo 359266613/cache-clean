@@ -1,0 +1,303 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="缓存清理"
+        Height="790" Width="1040" MinHeight="620" MinWidth="920"
+        WindowStartupLocation="CenterScreen"
+        Background="#F4F6F9"
+        FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="Accent" Color="#2F6BFF" />
+        <SolidColorBrush x:Key="TextPrimary" Color="#1F2329" />
+        <SolidColorBrush x:Key="TextSecondary" Color="#6B7280" />
+        <SolidColorBrush x:Key="TextMuted" Color="#98A2B3" />
+        <SolidColorBrush x:Key="Line" Color="#ECEFF3" />
+
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#E6E9EE" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+        </Style>
+
+        <Style x:Key="PrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource Accent}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="18,8" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#1E57E8" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Background" Value="#B9C6E6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GhostButton" TargetType="Button">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="Foreground" Value="#374151" />
+            <Setter Property="Padding" Value="14,8" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8"
+                                BorderBrush="#DDE2E9" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#F5F7FA" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Background" Value="#F7F8FA" />
+                                <Setter Property="Foreground" Value="#B9C0CC" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#8A94A6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="Padding" Value="8,10,8,10" />
+            <Setter Property="BorderBrush" Value="#EEF1F5" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+        </Style>
+
+        <Style TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border Background="{TemplateBinding Background}" Padding="0">
+                            <ContentPresenter VerticalAlignment="Center" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#F0F5FF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="#F3F5F8" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Height" Value="54" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#FAFBFD" />
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#F0F5FF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="22,18,22,18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 头部 -->
+        <Border Grid.Row="0" Style="{StaticResource Card}" Padding="20,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                    <TextBlock Text="缓存清理" FontSize="20" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimary}" />
+                    <TextBlock Text="扫描本机可安全清理的缓存，勾选后一键清理；默认只清可再生成的缓存"
+                               FontSize="12" Foreground="{StaticResource TextMuted}" Margin="0,5,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border x:Name="AdminBadge" Background="#FFF4E5" CornerRadius="6" Padding="9,4"
+                            Margin="0,0,16,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="AdminBadgeText" Text="标准权限" FontSize="11.5" Foreground="#B26A00" />
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock x:Name="TotalText" Text="—" FontSize="24" FontWeight="Bold"
+                                   Foreground="{StaticResource Accent}" HorizontalAlignment="Right" />
+                        <TextBlock Text="可释放" FontSize="11.5" Foreground="{StaticResource TextMuted}"
+                                   HorizontalAlignment="Right" Margin="0,1,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 工具栏 -->
+        <Grid Grid.Row="1" Margin="0,14,0,10">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+                <Button x:Name="BtnScan" Content="重新扫描" Style="{StaticResource PrimaryButton}" />
+                <Button x:Name="BtnClean" Content="清理选中" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
+                <Button x:Name="BtnDefault" Content="仅选推荐" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
+                <Button x:Name="BtnNone" Content="全部取消" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="BtnOpenPath" Content="打开位置" Style="{StaticResource GhostButton}" />
+                <Button x:Name="BtnLogs" Content="日志" Style="{StaticResource GhostButton}" Margin="10,0,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 列表 -->
+        <Border Grid.Row="2" Style="{StaticResource Card}" ClipToBounds="True">
+            <DataGrid x:Name="Grid" AutoGenerateColumns="False" HeadersVisibility="Column"
+                      GridLinesVisibility="None" Background="Transparent" BorderThickness="0"
+                      RowHeaderWidth="0" CanUserAddRows="False" CanUserDeleteRows="False"
+                      CanUserResizeRows="False" CanUserReorderColumns="False"
+                      SelectionMode="Single" SelectionUnit="FullRow"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      Margin="6,4,6,4">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Width="46" CanUserResize="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEnabled="{Binding CanClean}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="缓存名称" Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="4,0,12,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Label}" FontSize="14" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimary}" />
+                                    <TextBlock Text="{Binding Note}" FontSize="11.5" Margin="0,3,0,0"
+                                               Foreground="{StaticResource TextMuted}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="大小" Width="120" CanUserResize="False">
+                        <DataGridTemplateColumn.HeaderStyle>
+                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                <Setter Property="HorizontalContentAlignment" Value="Right" />
+                                <Setter Property="Padding" Value="0,10,14,10" />
+                            </Style>
+                        </DataGridTemplateColumn.HeaderStyle>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding SizeText}" FontSize="14" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimary}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,14,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="文件数" Width="100" CanUserResize="False">
+                        <DataGridTemplateColumn.HeaderStyle>
+                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                <Setter Property="HorizontalContentAlignment" Value="Right" />
+                                <Setter Property="Padding" Value="0,10,14,10" />
+                            </Style>
+                        </DataGridTemplateColumn.HeaderStyle>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding FilesText}" FontSize="13"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,14,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="位置" Width="86" CanUserResize="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding LocText}" FontSize="13"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           VerticalAlignment="Center" Margin="4,0,0,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="状态" Width="130" CanUserResize="False">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding StatusText}" FontSize="12.5"
+                                           Foreground="{StaticResource TextSecondary}"
+                                           VerticalAlignment="Center" Margin="4,0,10,0" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <!-- 路径详情 -->
+        <Border Grid.Row="3" Style="{StaticResource Card}" Padding="16,12" Margin="0,10,0,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                    <TextBlock Text="路径位置" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextSecondary}" />
+                    <TextBlock x:Name="PathHint" Text="选中上方任意一行查看具体目录" FontSize="11.5"
+                               Foreground="{StaticResource TextMuted}" Margin="10,0,0,0" />
+                </StackPanel>
+                <TextBox x:Name="PathBox" Grid.Row="1" Margin="0,6,0,0" MinHeight="58" MaxHeight="96"
+                         IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                         FontFamily="Consolas, Microsoft YaHei UI" FontSize="12"
+                         Foreground="#4B5563" VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto" TextWrapping="NoWrap" />
+            </Grid>
+        </Border>
+
+        <!-- 底部状态 -->
+        <Grid Grid.Row="4" Margin="2,10,2,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <ProgressBar x:Name="Progress" Grid.Row="0" Height="3" Background="#E8ECF2"
+                         Foreground="{StaticResource Accent}" BorderThickness="0" Visibility="Hidden" />
+            <Grid Grid.Row="1" Margin="0,8,0,0">
+                <TextBlock x:Name="StatusText" Text="准备就绪" FontSize="12"
+                           Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Left" />
+                <TextBlock x:Name="SelectedText" Text="" FontSize="12"
+                           Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Right" />
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>
